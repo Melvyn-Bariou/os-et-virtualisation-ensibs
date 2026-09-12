@@ -93,7 +93,111 @@ static int cas2(void)
 {
     // Cas 2 : créer un dossier qui va saturer le nombre d'inode avec pleins de petits fichier et d'afficher différentes stats
 
+    // Création des petits fichiers
+    struct statvfs fs_avant, fs_apres;
+    char chemin[512];
+    unsigned long i, nb_cree = 0, limite;
+    int fd;
+
+    if (mkdir(DOSSIER, 0755) == -1 && errno != EEXIST) {
+        perror(DOSSIER);
+        return 1;
+    }
+    if (mkdir(DOSSIER_PETITS, 0755) == -1 && errno != EEXIST) {
+        perror(DOSSIER_PETITS);
+        return 1;
+    }
+
+    /* Mesure AVANT : c'est la reference pour compter les inodes consommes */
+    if (statvfs(DOSSIER_PETITS, &fs_avant) == -1) {
+        perror("statvfs");
+        return 1;
+    }
+
+    /* Garde-fou : jamais plus de 80 % des inodes libres */
+    limite = (unsigned long)(fs_avant.f_ffree * 0.8);
+    unsigned long nb = NB_PETITS;
+    if (nb > limite) {
+        printf("Demande ramenee a %lu (80%% des %lu inodes libres)\n",
+               limite, (unsigned long)fs_avant.f_ffree);
+        nb = limite;
+    }
+
+    printf("Creation de %lu fichiers de %d octets...\n", nb, TAILLE_PETIT);
+
+    for (i = 0; i < nb; i++) {
+        snprintf(chemin, sizeof chemin, "%s/f%08lu.txt", DOSSIER_PETITS, i);
+
+        fd = open(chemin, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd == -1) {
+            /* ENOSPC ici = plus d'inodes, meme s'il reste de la place */
+            printf("Arret a %lu fichiers : %s\n", i, strerror(errno));
+            break;
+        }
+        write(fd, "AAAAA", TAILLE_PETIT);
+        close(fd);
+        nb_cree++;
+    }
+    printf("%lu fichiers crees.\n", nb_cree);
+
+    // Parcours du dossier pour compter le nombre de fichiers
+    DIR *rep;
+    struct dirent *entree;
+    struct stat st;
+    long long somme_donnees = 0, somme_alloue = 0;
+
+    sync();   /* forcer l'ecriture avant de mesurer */
+
+    rep = opendir(DOSSIER_PETITS);
+    if (rep == NULL) {
+        perror(DOSSIER_PETITS);
+        return 1;
+    }
+
+    while ((entree = readdir(rep)) != NULL) {
+        if (strcmp(entree->d_name, ".") == 0 || strcmp(entree->d_name, "..") == 0)
+            continue;
+
+        snprintf(chemin, sizeof chemin, "%s/%s", DOSSIER_PETITS, entree->d_name);
+
+        if (lstat(chemin, &st) == -1)
+            continue;
+
+        somme_donnees += (long long)st.st_size;
+        somme_alloue  += (long long)st.st_blocks * 512;
+    }
+    closedir(rep);
+
+    if (statvfs(DOSSIER_PETITS, &fs_apres) == -1) {
+        perror("statvfs");
+        return 1;
+    }
+
+    // Affichage
+    long long taille_bloc = fs_apres.f_frsize;
+    long long theo_blocs  = (long long)nb_cree * taille_bloc;  /* 1 bloc/fichier */
+    long long theo_inodes = (long long)nb_cree * 256;          /* ext4 : 256 o */
+
+    /* Le dossier lui-meme occupe de la place pour indexer les noms */
+    struct stat st_dir;
+    lstat(DOSSIER_PETITS, &st_dir);
+
+    printf("\nFichiers crees : %lu\n", nb_cree);
+    printf("Taille de bloc : %lld octets\n", taille_bloc);
+    printf("Inodes libres avant : %lu\n", (unsigned long)fs_avant.f_ffree);
+    printf("Inodes libres apres : %lu\n", (unsigned long)fs_apres.f_ffree);
+    printf("Inodes consommes : %lu\n", (unsigned long)(fs_avant.f_ffree - fs_apres.f_ffree));
+    printf("\n");
+
+    printf("Espace donnees : %lld octets\n", somme_donnees);
+    printf("Theorique blocs : %lld octets\n", theo_blocs);
+    printf("Theorique inodes : %lld octets\n", theo_inodes);
+    printf("Theorique total : %lld octets\n", theo_blocs + theo_inodes);
+    printf("Espace alloue reel : %lld octets\n", somme_alloue);
+    printf("\n");
     
+    printf("Dossier : taille : %lld octets\n", (long long)st_dir.st_size);
+    printf("Dossier : blocs : %lld octets\n", (long long)st_dir.st_blocks * 512);
 }
 
 /* Supprime tous les fichiers d'un dossier, puis le dossier lui-meme. */
@@ -113,7 +217,7 @@ static int vider_dossier(const char *chemin)
     }
 
     while ((entree = readdir(rep)) != NULL) {
-        /* "." et ".." sont toujours presents, il faut les ignorer */
+        /* "." et ".." à ignorer */
         if (strcmp(entree->d_name, ".") == 0 || strcmp(entree->d_name, "..") == 0)
             continue;
 
@@ -159,6 +263,8 @@ static int reset(void)
     return 0;
 }
 
+// Entrée du programme avec un argument pour choisir le cas à exécuter
+// Usage : ./programme-gestion-inode {cas1|cas2|reset}
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
