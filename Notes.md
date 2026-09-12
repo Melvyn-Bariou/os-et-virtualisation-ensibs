@@ -334,3 +334,27 @@ On voit les `clone()` s'enchaîner sans aucun `wait4()`, puis une rafale de
   adoptés puis nettoyés par `init`.
 - Comparer la sortie de `strace` entre une version C et une version Python
   du même programme.
+
+---
+
+## 6. Inodes et block
+
+Tableau d'inodes dans le systemes avec quelques informations sur le fichier, et les différents blocks dans lequels sont les données.
+
+ls -i fichier        # affiche le numéro d'inode
+stat fichier         # affiche tout le contenu de l'inode
+
+Les commandes boite à outils
+
+```md
+stat fichier                 # inode complet
+stat -c '%s %b %B %i' f      # taille, blocs, taille bloc, num inode
+du -b fichier                # espace disque réel
+du --apparent-size -b f      # taille des données
+df -i                        # inodes du système de fichiers
+ls -i                        # numéro d'inode
+file fichier                 # type via magic number
+tune2fs -l /dev/X            # paramètres du FS
+```
+
+
