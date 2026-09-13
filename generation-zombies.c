@@ -8,10 +8,10 @@ int main(void)
 
     while (1) {
         if (fork() == 0) {
-            /* ENFANT : se termine immédiatement */
+            /* l'enfant se termine immédiatement */
             _exit(0);
         }
-        /* PARENT : n'appelle jamais wait(), d'où le zombie */
+        /* le process parent n'appelle jamais wait(), d'où le zombie */
         sleep(5);
     }
 }
